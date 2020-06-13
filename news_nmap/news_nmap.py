@@ -49,11 +49,12 @@ class ServerMap:
         # Register cache repository
         self._factory.register_builder('cacheout', CacheRepositoryBuilder())
         self._cache_dao = await self._factory.create('cacheout')  # cache data access object
-        self._cache_dao.batch.update('1', 1)
-        self._cache_dao.batch.update('2', 2)
-        self._cache_dao.batch.update('3', 3)
-        print(self._cache_dao.batch[1:])
-        pass
+        # self._cache_dao.batch.append(1)
+        # self._cache_dao.batch.append(2)
+        # self._cache_dao.batch.append(3)
+        # print(self._cache_dao.batch[:10])
+        # pass
+        await self.target_scraping()
 
     async def _terminate(self, app):
         self.log.info('Server is shutting down')
@@ -62,9 +63,6 @@ class ServerMap:
             await self._redis_dao.close()
         except Exception:
             pass
-
-    async def _posts(self, request):
-        print("hello")
 
     def _init_log_handler(self):
         """
@@ -115,6 +113,25 @@ class ServerMap:
         except KeyError as e:
             raise KeyError(f"Specify necessary environment variable {e}")
 
+    async def _posts(self, request):
+        print("hello")
+
+    async def target_scraping(self, target=None):
+        """
+        The method parses target resource
+        :return:
+        """
+        target = target if target else self._config['target_fqdn']
+        try:
+            async with aiohttp.ClientSession() as session, session.get(target) as response:
+                # TODO
+                _ = await response.text()
+                pass
+        except aiohttp.ClientError as e:
+            self.log.error(f"Can't connect to target resource, error: {e}")
+        except Exception as e:
+            pass
+
     def listen(self):
         web.run_app(self._app, host=self._config['host'], port=self._config['port'])
 
@@ -126,23 +143,23 @@ class RepositoriesFactory(object_factory.ObjectFactory):
     """
 
 
-# self._cache = cacheout.fifo.FIFOCache(self._cache_maxsize)
-class CustomCache(cacheout.fifo.FIFOCache):
+class CustomCache(list):
+
+    def __init__(self, maxsize: int):
+        self.maxsize = maxsize
+        super().__init__()
 
     def __getitem__(self, item):
         """
 
-        :param item: slice(1, None, None)
+        :param item: slice(start, end, step)
         :return:
         """
-        # TODO
-        return super().__getitem__(item)
-
-    async def update(self, key, value):
-        await self.save(key, value)
-
-    async def save(self, key, value):
-        self._cache.set(key, value)
+        try:
+            # TODO some logic
+            return super().__getitem__(item)
+        except Exception:
+            return None
 
 
 class CacheRepository(object_factory.ObjectRepository):
@@ -180,7 +197,7 @@ class CacheRepositoryBuilder(object_factory.ObjectBuilder):
         try:
             return CustomCache(cache_maxsize)
         except Exception as e:
-            print(f"Can't create cacheout: {e}")
+            print(f"Can't create cache repo: {e}")
             raise
 
 
