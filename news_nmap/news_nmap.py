@@ -22,7 +22,7 @@ class ServerMap:
     """
     log = None
 
-    allowed_keys = ['id', 'title', 'url', 'now']  #  allowed key list to sort
+    allowed_keys = ['id', 'title', 'url', 'now']  # allowed key list to sort
 
     def __init__(self, config: Dict[str, Union[str, int]]):
 
@@ -75,7 +75,7 @@ class ServerMap:
             if self._config['log_handler'] == 'file':
                 # create the logging file handler
                 try:
-                    Path(self._config['path_to_log']).mkdir(parents=True, exist_ok=True)
+                    Path(self._config['path_to_log']).resolve().parents[1].mkdir(parents=True, exist_ok=True)
                 except FileExistsError:
                     pass
 
@@ -115,12 +115,12 @@ class ServerMap:
 
     async def _posts(self, request):
         try:
-            order = request.query.get('order') or 'id'
-            offset = int(request.query.get('offset')) or 0
-            limit = int(request.query.get('limit')) or 5
+            order = request.query.get('order', 'id')
+            offset = int(request.query.get('offset', 0))
+            limit = int(request.query.get('limit', 5))
 
-            # Updating the cache on request
-            self._cache_dao.batch.extend(await self.target_scraping())
+            # TODO Updating the cache on request isn't good idea
+            self._cache_dao.batch.extend(await self.target_scraping())  # if None than not extend
 
             if order not in self.allowed_keys:
                 raise ValueError(f"not allowed sort key: {order}")
@@ -131,7 +131,8 @@ class ServerMap:
             if limit < 0 or limit > self._cache_maxsize:
                 return web.Response(text=str('Offset is too large or negative'))
 
-            if (subset := sorted(self._cache_dao.batch, key=lambda x: x[order])[offset: offset + limit]) is None:
+            if (subset := self._cache_dao.batch.sort(key=lambda x: x[order])[offset: offset + limit]) is None:
+                # if subset is None:
                 return web.HTTPInternalServerError()
 
             return web.Response(text=str(subset))
@@ -201,28 +202,28 @@ class CustomCache(list):
         :param item: slice(start, end, step)
         :return:
         """
-        try:
-            start, end, _ = item
 
-            if start < 0 or start > self.maxsize:
-                raise ValueError('start is too large or negative')
+        if item.start < 0 or item.start > self.maxsize:
+            raise ValueError('start is too large or negative')
 
-            if end < 0 or end > self.maxsize:
-                raise ValueError('end is too large or negative')
+        if item.stop < 0:
+            raise ValueError('end is negative')
 
-            return super().__getitem__(item)
-        except Exception:
-            return None
+        return super().__getitem__(item)
 
     def extend(self, __iterable) -> None:
         if __iterable is not None:
             self.clear()
             super(CustomCache, self).extend(__iterable)
 
+    def sort(self, key, reverse=False):
+        super(CustomCache, self).sort(key=key, reverse=reverse)
+        return self
+
 
 class CacheRepository(object_factory.ObjectRepository):
     """
-    TODO product
+    The product from pattern fabric method
     """
     def __init__(self, connection: CustomCache):
         self._cache = connection  # Redefining the interface for the application context
@@ -239,7 +240,7 @@ class CacheRepository(object_factory.ObjectRepository):
 
 class CacheRepositoryBuilder(object_factory.ObjectBuilder):
     """
-    TODO client
+    The client from pattern fabric method
     """
     async def __call__(self, cache_maxsize: int = 30, **_ignored):
         if not self._instance:
