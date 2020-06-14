@@ -12,6 +12,7 @@ import aiohttp
 from aiohttp import web
 from bs4 import BeautifulSoup
 
+sys.path.insert(0, './')
 from mypackages import settings
 from mypackages import object_factory
 
