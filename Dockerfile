@@ -16,6 +16,6 @@ WORKDIR /opt/nmap
 
 COPY news_nmap/ news_nmap/
 COPY mypackages/ limypackages/
-COPY .env.default .env
+COPY .env.yaml.default .env
 
 CMD /usr/bin/python3 ./news_nmap/news_nmap.py -p ./.env
