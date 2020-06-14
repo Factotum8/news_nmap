@@ -1,20 +1,17 @@
-import os
 import sys
-import yaml
 import logging
-import asyncio
+import datetime
 import argparse
 from typing import Dict
 from pathlib import Path
 from typing import Union
-from collections import ChainMap
 
+import logstash
+import asyncio
 import aiohttp
 from aiohttp import web
-import logstash
-import cacheout
+from bs4 import BeautifulSoup
 
-sys.path.insert(0, './mypackages')
 from mypackages import settings
 from mypackages import object_factory
 
@@ -23,6 +20,10 @@ class ServerMap:
     """
     Main class
     """
+    log = None
+
+    allowed_keys = ['id', 'title', 'url', 'now']  #  allowed key list to sort
+
     def __init__(self, config: Dict[str, Union[str, int]]):
 
         self.log = None
@@ -32,7 +33,6 @@ class ServerMap:
         self._config = {remove_prefix(k, 'nmap_'): v for k, v in config.items()}
 
         self._cache_maxsize = self._config['memory_depth']
-        # self._cache = cacheout.fifo.FIFOCache(self._cache_maxsize)
 
         self._init_log_handler()
 
@@ -47,14 +47,15 @@ class ServerMap:
 
         self._factory = RepositoriesFactory()
         # Register cache repository
-        self._factory.register_builder('cacheout', CacheRepositoryBuilder())
-        self._cache_dao = await self._factory.create('cacheout')  # cache data access object
-        # self._cache_dao.batch.append(1)
-        # self._cache_dao.batch.append(2)
-        # self._cache_dao.batch.append(3)
-        # print(self._cache_dao.batch[:10])
-        # pass
-        await self.target_scraping()
+        self._factory.register_builder('cache', CacheRepositoryBuilder())
+        self._cache_dao = await self._factory.create('cache')  # cache data access object
+
+        if (batch := await self.target_scraping()) is None:
+            s = f"can't complete the news batch"
+            self.log.warning(s)
+            raise KeyboardInterrupt(s)
+        # save news
+        self._cache_dao.batch.extend(batch)
 
     async def _terminate(self, app):
         self.log.info('Server is shutting down')
@@ -114,23 +115,54 @@ class ServerMap:
             raise KeyError(f"Specify necessary environment variable {e}")
 
     async def _posts(self, request):
-        print("hello")
+        try:
+            order = request.query.get('order') or 'id'
+            offset = int(request.query.get('offset')) or 0
+            limit = int(request.query.get('limit')) or 5
+
+            if order not in self.allowed_keys:
+                raise ValueError(f"not allowed sort key: {order}")
+
+            if offset < 0 or offset > self._cache_maxsize:
+                return web.Response(text=str('Offset is too large or negative'))
+
+            if limit < 0 or limit > self._cache_maxsize:
+                return web.Response(text=str('Offset is too large or negative'))
+
+        except ValueError as e:
+            self.log.debug(f"{request} isn't correct parameters: {e}")
+            return web.HTTPBadRequest()
 
     async def target_scraping(self, target=None):
         """
         The method parses target resource
-        :return:
+        :return: batch - list with dicts
         """
-        target = target if target else self._config['target_fqdn']
+        target = target or self._config['target_fqdn']
+        self.log.debug(f"{target} is starting parse")
+        batch = []
         try:
             async with aiohttp.ClientSession() as session, session.get(target) as response:
-                # TODO
-                _ = await response.text()
-                pass
+                soup = BeautifulSoup(await response.text())
+                # Date time in UTC format
+                now_ = datetime.datetime.utcnow().isoformat()
+                # TODO It may be optimized: soup.find_next('tr', {'class': 'athing'})
+                for _, item in zip(range(self._cache_maxsize), soup.find_all('tr', {'class': 'athing'})):
+                    story = item.find('a', {'class': 'storylink'})
+                    batch.append({
+                        'id': item['id'],
+                        'title': story.text,
+                        'url': story['href'],
+                        'now': now_
+                    })
+        except asyncio.CancelledError:
+            raise
         except aiohttp.ClientError as e:
             self.log.error(f"Can't connect to target resource, error: {e}")
         except Exception as e:
-            pass
+            self.log.exception(f"Can't parse target source, error: {e}")
+        finally:
+            return batch or None
 
     def listen(self):
         web.run_app(self._app, host=self._config['host'], port=self._config['port'])
@@ -144,6 +176,10 @@ class RepositoriesFactory(object_factory.ObjectFactory):
 
 
 class CustomCache(list):
+    """
+    This implementation for example!
+    In real project could replace to Redis or something else
+    """
 
     def __init__(self, maxsize: int):
         self.maxsize = maxsize
@@ -160,6 +196,10 @@ class CustomCache(list):
             return super().__getitem__(item)
         except Exception:
             return None
+
+    def extend(self, __iterable) -> None:
+        self.clear()
+        super(CustomCache, self).extend(__iterable)
 
 
 class CacheRepository(object_factory.ObjectRepository):
