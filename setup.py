@@ -21,7 +21,8 @@ setup(
         'test': [
             "mock==2.0.0",
             "freezegun==0.3.12",
-            "asynctest==0.12.2"
+            "asynctest==0.12.2",
+            "coverage>=5.1"
         ]
     },
 )
