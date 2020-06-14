@@ -28,7 +28,6 @@ class ServerMap:
 
         self.log = None
         self._factory = None
-        self._redis_dao = None
         # Remove prefix nmap_ for environment variables
         self._config = {remove_prefix(k, 'nmap_'): v for k, v in config.items()}
 
@@ -61,7 +60,7 @@ class ServerMap:
         self.log.info('Server is shutting down')
         # The insurance in case if method 'self._redis_dao.close' didn't call explicitly
         try:
-            await self._redis_dao.close()
+            await self._cache_dao.close()
         except Exception:
             pass
 
@@ -120,6 +119,9 @@ class ServerMap:
             offset = int(request.query.get('offset')) or 0
             limit = int(request.query.get('limit')) or 5
 
+            # Updating the cache on request
+            self._cache_dao.batch.extend(await self.target_scraping())
+
             if order not in self.allowed_keys:
                 raise ValueError(f"not allowed sort key: {order}")
 
@@ -129,14 +131,22 @@ class ServerMap:
             if limit < 0 or limit > self._cache_maxsize:
                 return web.Response(text=str('Offset is too large or negative'))
 
+            if (subset := sorted(self._cache_dao.batch, key=lambda x: x[order])[offset: offset + limit]) is None:
+                return web.HTTPInternalServerError()
+
+            return web.Response(text=str(subset))
+
         except ValueError as e:
             self.log.debug(f"{request} isn't correct parameters: {e}")
             return web.HTTPBadRequest()
+        except Exception as e:
+            self.log.exception(f"{request} throw exception: {e}")
+            raise
 
     async def target_scraping(self, target=None):
         """
         The method parses target resource
-        :return: batch - list with dicts
+        :return: batch - list with dicts or None
         """
         target = target or self._config['target_fqdn']
         self.log.debug(f"{target} is starting parse")
@@ -192,14 +202,22 @@ class CustomCache(list):
         :return:
         """
         try:
-            # TODO some logic
+            start, end, _ = item
+
+            if start < 0 or start > self.maxsize:
+                raise ValueError('start is too large or negative')
+
+            if end < 0 or end > self.maxsize:
+                raise ValueError('end is too large or negative')
+
             return super().__getitem__(item)
         except Exception:
             return None
 
     def extend(self, __iterable) -> None:
-        self.clear()
-        super(CustomCache, self).extend(__iterable)
+        if __iterable is not None:
+            self.clear()
+            super(CustomCache, self).extend(__iterable)
 
 
 class CacheRepository(object_factory.ObjectRepository):
