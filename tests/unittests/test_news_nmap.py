@@ -1,6 +1,3 @@
-import unittest
-from unittest import TestCase
-
 from mock import Mock
 from aiohttp.test_utils import make_mocked_request
 from asynctest import TestCase, patch, CoroutineMock
@@ -39,29 +36,7 @@ class TestServerMap(TestCase):
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), size)
 
-    # @patch('news_nmap.news_nmap.web.Response')
-    # @patch('news_nmap.news_nmap.web')
-    @unittest.skip("")
-    # @patch('news_nmap.news_nmap.web')
-    async def test__posts(self, *_):
-        size = 5
-
-        server = ServerMap({'memory_depth': size})
-        factory = RepositoriesFactory()
-        factory.register_builder('cache', CacheRepositoryBuilder())
-        server._cache_dao = await factory.create('cache')
-        server.log = Mock()
-        server.target_scraping = CoroutineMock(return_value=batch_stub)
-        request = CoroutineMock()
-        # web = CoroutineMock()
-        # web.Response = CoroutineMock()
-        request.query = {'offset': 0}
-
-        _ = await server._posts(request)
-        # TODO
-        # web.Response.assert_called_with(text=str(batch_stub))
-        # self.fail()
-
+    # @unittest.skip("")
     async def test__posts2(self, *_):
         size = 5
         server = ServerMap({'memory_depth': size})
