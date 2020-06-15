@@ -1,4 +1,5 @@
 import sys
+import json
 import logging
 import datetime
 import argparse
@@ -136,7 +137,7 @@ class ServerMap:
                 # if subset is None:
                 return web.HTTPInternalServerError()
 
-            return web.Response(text=str(subset))
+            return web.Response(text=json.dumps(subset))
 
         except ValueError as e:
             self.log.debug(f"{request} isn't correct parameters: {e}")
