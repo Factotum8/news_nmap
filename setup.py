@@ -8,7 +8,7 @@ setup(
 
     install_requires=[
         # Production requirements (always need)
-        "aiohttp==3.6.2",
+        "aiohttp==3.7.4",
         "PyYAML==5.3.1",
         "cacheout==0.11.2",
         "python3-logstash==0.4.80",
